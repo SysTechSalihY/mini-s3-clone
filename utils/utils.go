@@ -21,7 +21,7 @@ func GeneratePresignedURL(bucket, key, secret, operation string, duration time.D
 	h.Write([]byte(message))
 	signature := base64.URLEncoding.EncodeToString(h.Sum(nil))
 
-	url := fmt.Sprintf("/object/%s?bucket=%s&key=%s&expires=%d&sig=%s", operation, bucket, key, expiration, signature)
+	url := fmt.Sprintf("/api/presigned/%s?bucket=%s&key=%s&expires=%d&sig=%s", operation, bucket, key, expiration, signature)
 	if verID != "" {
 		url += fmt.Sprintf("&versionID=%s", verID)
 	}

@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strconv"
+	"time"
 
 	"github.com/SysTechSalihY/mini-s3-clone/db"
+	"github.com/SysTechSalihY/mini-s3-clone/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
@@ -59,8 +63,12 @@ func DownloadFile(DB *gorm.DB) fiber.Handler {
 			log.WithFields(log.Fields{"bucket": bucketName, "file": fileName}).Warn("Unauthorized download attempt")
 			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
 		}
-
-		versionedFileName := fmt.Sprintf("%s_%s", file.VersionID, file.FileName)
+		var versionedFileName string
+		if bucket.Versioning {
+			versionedFileName = fmt.Sprintf("%s_%s", file.VersionID, file.FileName)
+		} else {
+			versionedFileName = file.FileName
+		}
 		filePath := fmt.Sprintf("./storage/%s/%s", bucketName, versionedFileName)
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
 			log.WithField("filePath", filePath).Warn("File not found on disk")
@@ -69,6 +77,67 @@ func DownloadFile(DB *gorm.DB) fiber.Handler {
 
 		log.WithFields(log.Fields{"user_id": user.ID, "bucket": bucketName, "file": fileName, "versionID": file.VersionID}).Info("File download allowed")
 		return c.SendFile(filePath, true)
+	}
+}
+
+func CreateDownloadPresignedURL(DB *gorm.DB) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		bucketName := c.Query("bucket")
+		fileName := c.Query("key")
+		versionID := c.Query("versionID", "")
+		durationStr := c.Query("duration", "3600") // optional, default 1 hour
+
+		durationSec, err := strconv.Atoi(durationStr)
+		if err != nil {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid duration"})
+		}
+
+		if bucketName == "" || fileName == "" {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "bucket and key are required"})
+		}
+
+		var bucket db.Bucket
+		if err := DB.Where("bucket_name = ?", bucketName).First(&bucket).Error; err != nil {
+			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "bucket not found"})
+		}
+
+		user, ok := c.Locals("user").(*db.User)
+		if !ok || bucket.UserID != user.ID {
+			return c.Status(http.StatusForbidden).JSON(fiber.Map{"error": "only bucket owner can generate presigned URL"})
+		}
+
+		url := utils.GeneratePresignedURL(bucketName, fileName, user.SecretKey, "download", time.Duration(durationSec)*time.Second, versionID)
+		return c.JSON(fiber.Map{"url": url})
+	}
+}
+
+func CreateUploadPresignedURL(DB *gorm.DB) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		bucketName := c.Query("bucket")
+		fileName := c.Query("key")
+		durationStr := c.Query("duration", "3600") // optional, default 1 hour
+
+		durationSec, err := strconv.Atoi(durationStr)
+		if err != nil {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid duration"})
+		}
+
+		if bucketName == "" || fileName == "" {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "bucket and key are required"})
+		}
+
+		var bucket db.Bucket
+		if err := DB.Where("bucket_name = ?", bucketName).First(&bucket).Error; err != nil {
+			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "bucket not found"})
+		}
+
+		user, ok := c.Locals("user").(*db.User)
+		if !ok || bucket.UserID != user.ID {
+			return c.Status(http.StatusForbidden).JSON(fiber.Map{"error": "only bucket owner can generate presigned URL"})
+		}
+
+		url := utils.GeneratePresignedURL(bucketName, fileName, user.SecretKey, "upload", time.Duration(durationSec)*time.Second)
+		return c.JSON(fiber.Map{"url": url})
 	}
 }
 
@@ -136,28 +205,38 @@ func UploadFilePresignedURL(DB *gorm.DB) fiber.Handler {
 			return c.Status(404).JSON(fiber.Map{"error": "bucket not found"})
 		}
 
-		versionID := uuid.NewString()
+		var versionID string
+		var versionedFileName string
 
 		if bucket.Versioning {
+			versionID = uuid.NewString()
 			DB.Model(&db.File{}).
 				Where("bucket_id = ? AND file_name = ? AND is_latest = ?", bucket.ID, fileName, true).
 				Update("is_latest", false)
+
+			versionedFileName = fmt.Sprintf("%s_%s", versionID, fileName)
 		} else {
+			versionedFileName = fileName
 			var existing db.File
 			if err := DB.Where("bucket_id = ? AND file_name = ? AND is_latest = ?", bucket.ID, fileName, true).First(&existing).Error; err == nil {
 				log.WithFields(log.Fields{"bucket": bucketName, "file": fileName}).Warn("File exists and versioning disabled")
 				return c.Status(400).JSON(fiber.Map{"error": "file already exists"})
 			}
 		}
+		dirPath := fmt.Sprintf("./storage/%s", bucketName)
+		if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
+			log.WithError(err).WithField("dirPath", dirPath).Error("Failed to create bucket directory")
+			return c.Status(500).JSON(fiber.Map{"error": "failed to create directory"})
+		}
 
-		versionedFileName := fmt.Sprintf("%s_%s", versionID, fileName)
-		filePath := fmt.Sprintf("./storage/%s/%s", bucketName, versionedFileName)
+		filePath := filepath.Join(dirPath, versionedFileName)
 		if err := c.SaveFile(file, filePath); err != nil {
-			log.WithError(err).WithField("filePath", filePath).Error("Failed to save file")
+			log.WithError(err).WithField("filePath", filePath).Error("Failed to save file to disk")
 			return c.Status(500).JSON(fiber.Map{"error": "failed to save file"})
 		}
 
 		newFile := db.File{
+			ID:          uuid.NewString(),
 			FileName:    fileName,
 			BucketID:    bucket.ID,
 			Size:        file.Size,
@@ -171,14 +250,23 @@ func UploadFilePresignedURL(DB *gorm.DB) fiber.Handler {
 			return c.Status(500).JSON(fiber.Map{"error": "failed to save file metadata"})
 		}
 
-		log.WithFields(log.Fields{"bucket": bucketName, "file": fileName, "versionID": versionID}).Info("Presigned file uploaded successfully")
-		return c.Status(201).JSON(fiber.Map{
-			"message":   "file uploaded successfully",
-			"fileName":  fileName,
-			"bucket":    bucketName,
-			"size":      file.Size,
-			"versionID": versionID,
-		})
+		logFields := log.Fields{"bucket": bucketName, "file": fileName}
+		if bucket.Versioning {
+			logFields["versionID"] = versionID
+		}
+		log.WithFields(logFields).Info("Presigned file uploaded successfully")
+
+		resp := fiber.Map{
+			"message":  "file uploaded successfully",
+			"fileName": fileName,
+			"bucket":   bucketName,
+			"size":     file.Size,
+		}
+		if bucket.Versioning {
+			resp["versionID"] = versionID
+		}
+
+		return c.Status(201).JSON(resp)
 	}
 }
 
@@ -209,28 +297,35 @@ func UploadFile(DB *gorm.DB) fiber.Handler {
 			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
 		}
 
+		var versionedFileName string
 		versionID := uuid.NewString()
-
 		if bucket.Versioning {
+			versionedFileName = fmt.Sprintf("%s_%s", versionID, fileName)
+
 			DB.Model(&db.File{}).
 				Where("bucket_id = ? AND file_name = ? AND is_latest = ?", bucket.ID, fileName, true).
 				Update("is_latest", false)
 		} else {
+			versionedFileName = fileName
 			var existing db.File
 			if err := DB.Where("bucket_id = ? AND file_name = ? AND is_latest = ?", bucket.ID, fileName, true).First(&existing).Error; err == nil {
 				log.WithFields(log.Fields{"bucket": bucketName, "file": fileName}).Warn("File already exists and versioning disabled")
 				return c.Status(400).JSON(fiber.Map{"error": "file already exists"})
 			}
 		}
+		dirPath := fmt.Sprintf("./storage/%s", bucketName)
+		if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
+			log.WithError(err).WithField("dirPath", dirPath).Error("Failed to create bucket directory")
+			return c.Status(500).JSON(fiber.Map{"error": "failed to create directory"})
+		}
 
-		versionedFileName := fmt.Sprintf("%s_%s", versionID, fileName)
-		filePath := fmt.Sprintf("./storage/%s/%s", bucketName, versionedFileName)
+		filePath := filepath.Join(dirPath, versionedFileName)
 		if err := c.SaveFile(file, filePath); err != nil {
 			log.WithError(err).WithField("filePath", filePath).Error("Failed to save file to disk")
 			return c.Status(500).JSON(fiber.Map{"error": "failed to save file"})
 		}
-
 		newFile := db.File{
+			ID:          uuid.NewString(),
 			FileName:    fileName,
 			BucketID:    bucket.ID,
 			Size:        file.Size,

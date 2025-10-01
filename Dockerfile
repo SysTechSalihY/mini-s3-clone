@@ -32,3 +32,4 @@ WORKDIR /app
 COPY --from=builder /app/s3clone .
 
 # Copy data directory for
+CMD ["./s3clone"]

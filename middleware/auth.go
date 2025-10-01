@@ -13,6 +13,10 @@ import (
 
 func AuthMiddleware(DB *gorm.DB) fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		log.WithFields(log.Fields{
+			"method":       c.Method(),
+			"original_url": c.OriginalURL(),
+		}).Info("Incoming request for signature check")
 		bucketName := c.Params("bucketName", "")
 		var bucket db.Bucket
 		if bucketName != "" {

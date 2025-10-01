@@ -6,10 +6,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/SysTechSalihY/mini-s3-clone/db"
+	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -51,10 +54,21 @@ func SignRequest(secretKey, method, path string, expires int64) string {
 func ValidateRequest(DB *gorm.DB, accessKey, signature, method, path string, expires int64) bool {
 	user, err := GetUserByAccessKey(DB, accessKey)
 	if err != nil {
+		fmt.Println("User not found:", accessKey)
 		return false
 	}
 
+	method = strings.ToUpper(method)
+	path = strings.TrimRight(path, "/")
+
 	expectedSig := SignRequest(user.SecretKey, method, path, expires)
+
+	log.Println("=== DEBUG SIGNATURE CHECK ===")
+	log.Println("Method:", method)
+	log.Println("Path:", path)
+	log.Println("Expires:", expires)
+	log.Println("ClientSig:", signature)
+	log.Println("ServerSig:", expectedSig)
 
 	return hmac.Equal([]byte(signature), []byte(expectedSig)) && time.Now().Unix() < expires
 }
