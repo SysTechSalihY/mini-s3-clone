@@ -5,6 +5,14 @@ Supports file upload/download, bucket versioning, presigned URLs, and task queui
 
 ---
 
+## Status
+
+⚠️ **Project Status:** In Progress  
+This project is currently under active development.  
+Some features may be incomplete, experimental, or subject to change. Contributions and feedback are welcome.
+
+---
+
 ## Features
 
 - **Buckets**

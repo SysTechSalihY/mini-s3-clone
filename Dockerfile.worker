@@ -3,7 +3,7 @@
 # =========================
 FROM golang:1.25.1 AS builder
 
-# Set working directory inside the container
+# Set working directory
 WORKDIR /app
 
 # Enable Go modules
@@ -19,11 +19,8 @@ RUN go mod download
 # Copy the rest of the project
 COPY . .
 
-# Expose the port (if needed)
-EXPOSE ${PORT}
-
-# Build the binary from ./cmd/server/main.go
-RUN go build -o s3clone ./cmd/server/main.go
+# Build the worker binary
+RUN go build -o s3worker ./cmd/worker/main.go
 
 # =========================
 # Stage 2: Runtime stage
@@ -34,7 +31,7 @@ FROM debian:bookworm-slim
 WORKDIR /app
 
 # Copy the compiled binary from builder
-COPY --from=builder /app/s3clone .
+COPY --from=builder /app/s3worker .
 
 # Default command
-CMD ["./s3clone"]
+CMD ["./s3worker"]

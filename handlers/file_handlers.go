@@ -398,6 +398,34 @@ func UploadFile(DB *gorm.DB) fiber.Handler {
 
 func UploadFileMultipart(DB *gorm.DB) fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		bucketName := c.Params("bucketName")
+		if bucketName == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "bucketName is required"})
+		}
+		files, err := c.MultipartForm()
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "failed to read multipart form",
+			})
+		}
+		user, ok := c.Locals("user").(*db.User)
+		if !ok {
+			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
+		}
+		var bucket db.Bucket
+		if err := DB.Where("bucket_name = ?", bucketName).First(&bucket).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return c.Status(404).JSON(fiber.Map{"error": "bucket not found"})
+			}
+			return c.Status(500).JSON(fiber.Map{"error": "internal server error"})
+		}
+		if !ok || user.ID != bucket.UserID {
+			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
+		}
+		uploadedFiles := []string{}
+		for _, file := range files.File["files"] {
+
+		}
 		return c.SendStatus(200)
 	}
 }

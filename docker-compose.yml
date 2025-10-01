@@ -1,8 +1,12 @@
+version: "3.9"
+
 services:
   server:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.server
     ports:
-      - 8080:8080
+      - "8080:8080"
     env_file:
       - .env
     depends_on:
@@ -12,12 +16,27 @@ services:
         condition: service_started
     networks:
       - s3-clone    
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - s3-clone
+
   db:
     image: mysql:latest
     restart: always
     environment:
-       MYSQL_ROOT_PASSWORD: example
-       MYSQL_DATABASE: clone
+      MYSQL_ROOT_PASSWORD: example
+      MYSQL_DATABASE: clone
     ports:
       - "3306:3306"
     volumes:
