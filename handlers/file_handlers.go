@@ -85,28 +85,52 @@ func CreateDownloadPresignedURL(DB *gorm.DB) fiber.Handler {
 		bucketName := c.Query("bucket")
 		fileName := c.Query("key")
 		versionID := c.Query("versionID", "")
-		durationStr := c.Query("duration", "3600") // optional, default 1 hour
+		durationStr := c.Query("duration", "3600")
+
+		log.WithFields(log.Fields{
+			"bucket":    bucketName,
+			"file":      fileName,
+			"versionID": versionID,
+			"duration":  durationStr,
+		}).Info("Received request to create download presigned URL")
 
 		durationSec, err := strconv.Atoi(durationStr)
 		if err != nil {
+			log.WithError(err).WithField("duration", durationStr).Error("Invalid duration parameter")
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid duration"})
 		}
 
 		if bucketName == "" || fileName == "" {
+			log.Warn("Missing bucket or key parameter")
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "bucket and key are required"})
 		}
 
 		var bucket db.Bucket
 		if err := DB.Where("bucket_name = ?", bucketName).First(&bucket).Error; err != nil {
+			log.WithField("bucket", bucketName).Warn("Bucket not found in database")
 			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "bucket not found"})
 		}
 
 		user, ok := c.Locals("user").(*db.User)
-		if !ok || bucket.UserID != user.ID {
+		if !ok {
+			log.Warn("User not found in context")
+			return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+		}
+
+		if bucket.UserID != user.ID {
+			log.WithFields(log.Fields{"bucketOwner": bucket.UserID, "user": user.ID}).Warn("User not authorized to generate presigned URL for this bucket")
 			return c.Status(http.StatusForbidden).JSON(fiber.Map{"error": "only bucket owner can generate presigned URL"})
 		}
 
 		url := utils.GeneratePresignedURL(bucketName, fileName, user.SecretKey, "download", time.Duration(durationSec)*time.Second, versionID)
+		log.WithFields(log.Fields{
+			"user":      user.ID,
+			"bucket":    bucketName,
+			"file":      fileName,
+			"versionID": versionID,
+			"url":       url,
+		}).Info("Download presigned URL generated successfully")
+
 		return c.JSON(fiber.Map{"url": url})
 	}
 }
@@ -115,28 +139,50 @@ func CreateUploadPresignedURL(DB *gorm.DB) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		bucketName := c.Query("bucket")
 		fileName := c.Query("key")
-		durationStr := c.Query("duration", "3600") // optional, default 1 hour
+		durationStr := c.Query("duration", "3600")
+
+		log.WithFields(log.Fields{
+			"bucket":   bucketName,
+			"file":     fileName,
+			"duration": durationStr,
+		}).Info("Received request to create upload presigned URL")
 
 		durationSec, err := strconv.Atoi(durationStr)
 		if err != nil {
+			log.WithError(err).WithField("duration", durationStr).Error("Invalid duration parameter")
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid duration"})
 		}
 
 		if bucketName == "" || fileName == "" {
+			log.Warn("Missing bucket or key parameter")
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "bucket and key are required"})
 		}
 
 		var bucket db.Bucket
 		if err := DB.Where("bucket_name = ?", bucketName).First(&bucket).Error; err != nil {
+			log.WithField("bucket", bucketName).Warn("Bucket not found in database")
 			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "bucket not found"})
 		}
 
 		user, ok := c.Locals("user").(*db.User)
-		if !ok || bucket.UserID != user.ID {
+		if !ok {
+			log.Warn("User not found in context")
+			return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+		}
+
+		if bucket.UserID != user.ID {
+			log.WithFields(log.Fields{"bucketOwner": bucket.UserID, "user": user.ID}).Warn("User not authorized to generate upload presigned URL for this bucket")
 			return c.Status(http.StatusForbidden).JSON(fiber.Map{"error": "only bucket owner can generate presigned URL"})
 		}
 
 		url := utils.GeneratePresignedURL(bucketName, fileName, user.SecretKey, "upload", time.Duration(durationSec)*time.Second)
+		log.WithFields(log.Fields{
+			"user":   user.ID,
+			"bucket": bucketName,
+			"file":   fileName,
+			"url":    url,
+		}).Info("Upload presigned URL generated successfully")
+
 		return c.JSON(fiber.Map{"url": url})
 	}
 }
