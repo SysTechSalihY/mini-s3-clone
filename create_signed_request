@@ -12,7 +12,7 @@ const secretKey = "688fbfb6de25825153199abb7b9dbe41f1d7a6d949562351975ef590cd130
 // HTTP Method
 const method = "POST";
 // EXACT URL MATCH
-const path = "/api/presigned/url/upload?bucket=test&key=test1241";
+const path = "/api/tasks/empty-bucket/test123456";
 const expires = Math.floor(Date.now() / 1000) + 3600; // valid for 1 hour
 
 const signature = signRequest(secretKey, method, path, expires);

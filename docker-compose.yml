@@ -1,4 +1,3 @@
-version: "3.9"
 
 services:
   server:
@@ -9,6 +8,8 @@ services:
       - "8080:8080"
     env_file:
       - .env
+    volumes:
+      - s3-clone-storage:/app/storage   # <-- shared storage
     depends_on:
       db:
         condition: service_healthy
@@ -23,6 +24,8 @@ services:
       dockerfile: Dockerfile.worker
     env_file:
       - .env
+    volumes:
+      - s3-clone-storage:/app/storage   # <-- same shared storage
     depends_on:
       db:
         condition: service_healthy
@@ -62,6 +65,7 @@ services:
 volumes:
   s3-clone-mysql-new-data:
   s3-clone-new-redis-data:
+  s3-clone-storage:
 
 networks:
   s3-clone:

@@ -12,6 +12,19 @@ This project is currently under active development.
 Some features may be incomplete, experimental, or subject to change. Contributions and feedback are welcome.
 
 ---
+## Test Results
+?       github.com/SysTechSalihY/mini-s3-clone  [no test files]
+ok      github.com/SysTechSalihY/mini-s3-clone/auth     (cached)
+?       github.com/SysTechSalihY/mini-s3-clone/cmd/server       [no test files]
+?       github.com/SysTechSalihY/mini-s3-clone/cmd/worker       [no test files]
+?       github.com/SysTechSalihY/mini-s3-clone/db       [no test files]
+ok      github.com/SysTechSalihY/mini-s3-clone/handlers (cached)
+?       github.com/SysTechSalihY/mini-s3-clone/middleware       [no test files]
+?       github.com/SysTechSalihY/mini-s3-clone/tasks    [no test files]
+?       github.com/SysTechSalihY/mini-s3-clone/utils    [no test files]
+ok      github.com/SysTechSalihY/mini-s3-clone/worker   0.007s
+
+---
 
 ## Features
 

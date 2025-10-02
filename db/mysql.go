@@ -17,8 +17,8 @@ type User struct {
 	AccessKey    string `gorm:"unique;type:varchar(32);not null"`
 	PasswordHash string `gorm:"type:varchar(255);not null"`
 	IsVerified   bool   `gorm:"default:false"`
-	UserRole     string `gorm:"type:varchar(16);default:'user';not null"`
-	// UserRole     string    `gorm:"type:enum('user','admin');default:'user';not null"`
+	// //For tests remove sqllite does not support enum UserRole string `gorm:"type:varchar(16);default:'user';not null"`
+	UserRole  string    `gorm:"type:enum('user','admin');default:'user';not null"`
 	CreatedAt time.Time `gorm:"autoCreateTime"`
 	Buckets   []Bucket  `gorm:"foreignKey:UserID"`
 }
@@ -27,8 +27,8 @@ type Bucket struct {
 	ID         string     `gorm:"primaryKey;type:varchar(36)"`
 	BucketName string     `gorm:"unique;type:varchar(64);not null"`
 	UserID     string     `gorm:"type:varchar(36);not null;index"`
-	Region     string     // `gorm:"type:enum('USA','TR','CHINA','JP');not null"`
-	ACL        *string    //`gorm:"type:enum('private','public-read');default:'private';not null"`
+	Region     string     `gorm:"type:enum('USA','TR','CHINA','JP');not null"`                   //For tests remove sqllite does not support enum
+	ACL        *string    `gorm:"type:enum('private','public-read');default:'private';not null"` //For tests remove sqllite does not support enum
 	Versioning bool       `gorm:"default:false"`
 	Quota      *int64     `gorm:"default:null"` // bytes, optional
 	CreatedAt  time.Time  `gorm:"autoCreateTime"`
@@ -62,10 +62,10 @@ type EmailVerification struct {
 type Task struct {
 	ID         string     `gorm:"primaryKey;type:varchar(36)"`
 	UserID     string     `gorm:"type:varchar(36);not null"`
-	Type       string     // `gorm:"type:enum('copy','empty');not null"`
+	Type       string     `gorm:"type:enum('copy','empty');not null"` //For tests remove sqllite does not support enum
 	BucketSrc  *string    `gorm:"type:varchar(64)"`
 	BucketDest *string    `gorm:"type:varchar(64)"`
-	Status     string     //`gorm:"type:enum('running','completed','failed');default:'running'"`
+	Status     string     `gorm:"type:enum('running','completed','failed');default:'running'"` //For tests remove sqllite does not support enum
 	Progress   int        `gorm:"default:0"`
 	Message    string     `gorm:"type:varchar(255)"`
 	CreatedAt  time.Time  `gorm:"autoCreateTime"`

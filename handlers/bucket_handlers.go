@@ -101,9 +101,6 @@ func CreateBucket(DB *gorm.DB) fiber.Handler {
 			BucketName: req.BucketName,
 			UserID:     user.ID,
 			Region:     strings.ToUpper(req.Region),
-			Versioning: bool(*req.Versioning),
-			ACL:        req.ACL,
-			Quota:      req.Quota,
 		}
 
 		// Optional fields
@@ -316,8 +313,8 @@ func EnqueueCopyBucketTask(client *asynq.Client, DB *gorm.DB) fiber.Handler {
 		var destBucket db.Bucket
 		if err := DB.Where("bucket_name = ? AND user_id = ?", bucketDest, user.ID).First(&destBucket).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-
 				destBucket = db.Bucket{
+					ID:         uuid.NewString(),
 					BucketName: bucketDest,
 					UserID:     user.ID,
 					ACL:        srcBucket.ACL,
