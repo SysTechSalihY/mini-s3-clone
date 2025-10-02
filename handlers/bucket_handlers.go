@@ -101,6 +101,9 @@ func CreateBucket(DB *gorm.DB) fiber.Handler {
 			BucketName: req.BucketName,
 			UserID:     user.ID,
 			Region:     strings.ToUpper(req.Region),
+			Versioning: bool(*req.Versioning),
+			ACL:        req.ACL,
+			Quota:      req.Quota,
 		}
 
 		// Optional fields

@@ -7,7 +7,6 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"gorm.io/driver/mysql"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -84,18 +83,10 @@ func ConnectDb() error {
 
 	var err error
 
-	// Detect whether we are testing (SQLite in-memory)
-	if dsn == "sqlite" {
-		DB, err = gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
-		if err != nil {
-			return fmt.Errorf("failed to connect to sqlite in-memory: %w", err)
-		}
-	} else {
-		DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
-		if err != nil {
-			log.WithError(err).Error("Failed to connect to MySQL database")
-			return err
-		}
+	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.WithError(err).Error("Failed to connect to MySQL database")
+		return err
 	}
 
 	// Migrate all tables
