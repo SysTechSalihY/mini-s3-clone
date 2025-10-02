@@ -58,21 +58,6 @@ CREATE INDEX idx_bucket_created ON files(bucket_id, created_at DESC);
 
 CREATE INDEX idx_file_version ON files(bucket_id, file_name, version_id);
 
--- TAGS (flexible key/value metadata for buckets or files)
-CREATE TABLE IF NOT EXISTS tags (
-    id VARCHAR(36) PRIMARY KEY,
-    resource_type ENUM('bucket', 'file') NOT NULL,
-    resource_id VARCHAR(36) NOT NULL,
-    -- references bucket.id or file.id
-    tag_key VARCHAR(128) NOT NULL,
-    tag_value VARCHAR(256) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT NULL,
-);
-
-CREATE INDEX idx_tags_resource ON tags(resource_type, resource_id);
-
-CREATE UNIQUE INDEX idx_tags_unique ON tags(resource_type, resource_id, tag_key);
 
 -- Tasks 
 CREATE TABLE IF NOT EXISTS tasks(
