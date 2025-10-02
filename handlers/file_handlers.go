@@ -318,12 +318,14 @@ func UploadFilePresignedURL(DB *gorm.DB) fiber.Handler {
 
 func UploadFile(DB *gorm.DB) fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		// Read the file from multipart form
 		file, err := c.FormFile("file")
 		if err != nil || file == nil {
 			log.WithError(err).Error("UploadFile: reading file error")
 			return c.Status(400).JSON(fiber.Map{"error": "reading file error"})
 		}
 
+		// Extract bucketName and fileName from params
 		bucketName := c.Params("bucketName", "")
 		fileName := c.Params("fileName", "")
 		if bucketName == "" || fileName == "" {
@@ -331,45 +333,63 @@ func UploadFile(DB *gorm.DB) fiber.Handler {
 			return c.Status(400).JSON(fiber.Map{"error": "bucket and file names are required"})
 		}
 
+		// Lookup bucket in DB
 		var bucket db.Bucket
 		if err := DB.Where("bucket_name = ?", bucketName).First(&bucket).Error; err != nil {
 			log.WithError(err).WithField("bucket", bucketName).Warn("Bucket not found")
 			return c.Status(404).JSON(fiber.Map{"error": "bucket not found"})
 		}
 
+		// Authenticated user
 		user, ok := c.Locals("user").(*db.User)
 		if !ok || bucket.UserID != user.ID {
-			log.WithFields(log.Fields{"bucket": bucketName, "user_id": user.ID}).Warn("Unauthorized upload attempt")
+			log.WithFields(log.Fields{
+				"bucket":  bucketName,
+				"user_id": user.ID,
+			}).Warn("Unauthorized upload attempt")
 			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
 		}
 
+		// Handle versioning
 		var versionedFileName string
 		versionID := uuid.NewString()
 		if bucket.Versioning {
 			versionedFileName = fmt.Sprintf("%s_%s", versionID, fileName)
 
+			// Mark existing latest file as not latest
 			DB.Model(&db.File{}).
 				Where("bucket_id = ? AND file_name = ? AND is_latest = ?", bucket.ID, fileName, true).
 				Update("is_latest", false)
 		} else {
 			versionedFileName = fileName
+
+			// Ensure no file with same name exists
 			var existing db.File
-			if err := DB.Where("bucket_id = ? AND file_name = ? AND is_latest = ?", bucket.ID, fileName, true).First(&existing).Error; err == nil {
-				log.WithFields(log.Fields{"bucket": bucketName, "file": fileName}).Warn("File already exists and versioning disabled")
+			if err := DB.Where("bucket_id = ? AND file_name = ? AND is_latest = ?", bucket.ID, fileName, true).
+				First(&existing).Error; err == nil {
+				log.WithFields(log.Fields{
+					"bucket": bucketName,
+					"file":   fileName,
+				}).Warn("File already exists and versioning disabled")
 				return c.Status(400).JSON(fiber.Map{"error": "file already exists"})
 			}
 		}
+
+		// Create directory for bucket if not exists
 		dirPath := fmt.Sprintf("./storage/%s", bucketName)
 		if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
 			log.WithError(err).WithField("dirPath", dirPath).Error("Failed to create bucket directory")
 			return c.Status(500).JSON(fiber.Map{"error": "failed to create directory"})
 		}
 
+		// Save file to disk
 		filePath := filepath.Join(dirPath, versionedFileName)
 		if err := c.SaveFile(file, filePath); err != nil {
 			log.WithError(err).WithField("filePath", filePath).Error("Failed to save file to disk")
 			return c.Status(500).JSON(fiber.Map{"error": "failed to save file"})
 		}
+
+		// Save file metadata in DB
 		newFile := db.File{
 			ID:          uuid.NewString(),
 			FileName:    fileName,
@@ -385,7 +405,14 @@ func UploadFile(DB *gorm.DB) fiber.Handler {
 			return c.Status(500).JSON(fiber.Map{"error": "failed to save file metadata"})
 		}
 
-		log.WithFields(log.Fields{"user_id": user.ID, "bucket": bucketName, "file": fileName, "versionID": versionID}).Info("File uploaded successfully")
+		// Success response
+		log.WithFields(log.Fields{
+			"user_id":   user.ID,
+			"bucket":    bucketName,
+			"file":      fileName,
+			"versionID": versionID,
+		}).Info("File uploaded successfully")
+
 		return c.Status(201).JSON(fiber.Map{
 			"message":   "file uploaded successfully",
 			"fileName":  newFile.FileName,
@@ -398,35 +425,115 @@ func UploadFile(DB *gorm.DB) fiber.Handler {
 
 func UploadFileMultipart(DB *gorm.DB) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		bucketName := c.Params("bucketName")
+		bucketName := c.Params("bucketName", "")
 		if bucketName == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "bucketName is required"})
+			return c.Status(400).JSON(fiber.Map{"error": "bucket name is required"})
 		}
-		files, err := c.MultipartForm()
+
+		form, err := c.MultipartForm()
 		if err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"error": "failed to read multipart form",
-			})
+			log.WithError(err).Error("UploadFileMultipart: reading form error")
+			return c.Status(400).JSON(fiber.Map{"error": "failed to read multipart form"})
 		}
-		user, ok := c.Locals("user").(*db.User)
-		if !ok {
-			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
-		}
+
+		// validate bucket
 		var bucket db.Bucket
 		if err := DB.Where("bucket_name = ?", bucketName).First(&bucket).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return c.Status(404).JSON(fiber.Map{"error": "bucket not found"})
-			}
-			return c.Status(500).JSON(fiber.Map{"error": "internal server error"})
+			log.WithError(err).WithField("bucket", bucketName).Warn("Bucket not found")
+			return c.Status(404).JSON(fiber.Map{"error": "bucket not found"})
 		}
-		if !ok || user.ID != bucket.UserID {
+
+		// validate user
+		user, ok := c.Locals("user").(*db.User)
+		if !ok || bucket.UserID != user.ID {
+			log.WithFields(log.Fields{"bucket": bucketName, "user_id": user.ID}).Warn("Unauthorized upload attempt")
 			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
 		}
-		uploadedFiles := []string{}
-		for _, file := range files.File["files"] {
 
+		uploadedFiles := []fiber.Map{}
+		dirPath := fmt.Sprintf("./storage/%s", bucketName)
+		if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
+			log.WithError(err).WithField("dirPath", dirPath).Error("Failed to create bucket directory")
+			return c.Status(500).JSON(fiber.Map{"error": "failed to create directory"})
 		}
-		return c.SendStatus(200)
+
+		// loop over all uploaded files
+		for _, file := range form.File["files"] {
+			fileName := file.Filename
+			versionID := uuid.NewString()
+
+			var versionedFileName string
+			if bucket.Versioning {
+				// disable old "latest"
+				DB.Model(&db.File{}).
+					Where("bucket_id = ? AND file_name = ? AND is_latest = ?", bucket.ID, fileName, true).
+					Update("is_latest", false)
+
+				versionedFileName = fmt.Sprintf("%s_%s", versionID, fileName)
+			} else {
+				// check if file exists
+				var existing db.File
+				if err := DB.Where("bucket_id = ? AND file_name = ? AND is_latest = ?", bucket.ID, fileName, true).First(&existing).Error; err == nil {
+					log.WithFields(log.Fields{"bucket": bucketName, "file": fileName}).Warn("File already exists and versioning disabled")
+					uploadedFiles = append(uploadedFiles, fiber.Map{
+						"fileName": fileName,
+						"error":    "file already exists (versioning disabled)",
+					})
+					continue
+				}
+				versionedFileName = fileName
+			}
+
+			// save file to disk
+			filePath := filepath.Join(dirPath, versionedFileName)
+			if err := c.SaveFile(file, filePath); err != nil {
+				log.WithError(err).WithField("filePath", filePath).Error("Failed to save file to disk")
+				uploadedFiles = append(uploadedFiles, fiber.Map{
+					"fileName": fileName,
+					"error":    "failed to save file",
+				})
+				continue
+			}
+
+			// save metadata
+			newFile := db.File{
+				ID:          uuid.NewString(),
+				FileName:    fileName,
+				BucketID:    bucket.ID,
+				Size:        file.Size,
+				ContentType: file.Header.Get("Content-Type"),
+				VersionID:   versionID,
+				IsLatest:    true,
+			}
+			if err := DB.Create(&newFile).Error; err != nil {
+				log.WithError(err).WithField("file", fileName).Error("Failed to insert file metadata")
+				uploadedFiles = append(uploadedFiles, fiber.Map{
+					"fileName": fileName,
+					"error":    "failed to save metadata",
+				})
+				continue
+			}
+
+			log.WithFields(log.Fields{
+				"user_id": user.ID,
+				"bucket":  bucketName,
+				"file":    fileName,
+				"version": versionID,
+			}).Info("File uploaded successfully")
+
+			uploadedFiles = append(uploadedFiles, fiber.Map{
+				"message":   "file uploaded successfully",
+				"fileName":  newFile.FileName,
+				"bucket":    bucketName,
+				"size":      newFile.Size,
+				"versionID": versionID,
+			})
+		}
+
+		return c.Status(201).JSON(fiber.Map{
+			"bucket": bucketName,
+			"files":  uploadedFiles,
+		})
 	}
 }
 

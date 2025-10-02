@@ -101,7 +101,7 @@ func main() {
 	app.Post("/api/buckets/:bucketName/files/:fileName", handlers.UploadFile(db.DB))
 	app.Get("/api/buckets/:bucketName/files/:fileName", handlers.DownloadFile(db.DB))
 	app.Delete("/api/buckets/:bucketName/files/:fileName", handlers.DeleteFile(db.DB))
-
+	app.Post("/api/buckets/:bucketName/files", handlers.UploadFileMultipart(db.DB))
 	app.Post("/api/tasks/empty-bucket/:bucketName", handlers.EnqueueEmptyBucketTask(asynqClient, db.DB))
 	app.Post("/api/tasks/copy-bucket/:bucketSrc/:bucketDest", handlers.EnqueueCopyBucketTask(asynqClient, db.DB))
 	app.Get("/api/tasks/:taskID", handlers.GetTaskProgress(db.DB))
