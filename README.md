@@ -33,7 +33,7 @@ All core features have been implemented and tested. The system is stable and rea
 - Track task progress with percentage updates
 
 ### Middleware
-- JWT-based authentication
+- Authentication
 - Rate limiting via Redis
 - Presigned URL validation
 
